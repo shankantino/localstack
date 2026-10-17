@@ -1,7 +1,7 @@
 #
 # base: Stage which installs necessary runtime dependencies (OS packages, etc.)
 #
-FROM python:3.13.12-slim-trixie@sha256:3de9a8d7aedbb7984dc18f2dff178a7850f16c1ae7c34ba9d7ecc23d0755e35f AS base
+FROM python:3.13.12-slim-trixie@sha256:8bc60ca09afaa8ea0d6d1220bde073bacfedd66a4bf8129cbdc8ef0e16c8a952 AS base
 ARG TARGETARCH
 
 # Install runtime OS package dependencies
@@ -49,7 +49,7 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
   && rm "$LATEST_VERSION_FILENAME.tar.xz" SHASUMS256.txt.asc SHASUMS256.txt \
   && ln -s /usr/local/bin/node /usr/local/bin/nodejs \
   # upgrade npm to the latest version
-  && npm upgrade -g npm \
+  && npm install -g npm@latest \
   # smoke tests
   && node --version \
   && npm --version \
@@ -78,7 +78,7 @@ RUN chmod 777 . && \
 
 # install the entrypoint script
 ADD bin/docker-entrypoint.sh /usr/local/bin/
-# add the shipped hosts file to prevent performance degredation in windows container mode on windows
+# add the shipped hosts file to prevent performance degradation in windows container mode on windows
 # (where hosts file is not mounted) See https://github.com/localstack/localstack/issues/5178
 ADD bin/hosts /etc/hosts
 
@@ -104,7 +104,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     apt-get update && \
         # Install dependencies to add additional repos
         # g++ is a workaround to fix the JPype1 compile error on ARM Linux "gcc: fatal error: cannot execute ‘cc1plus’"
-        apt-get install -y gcc g++
+        apt-get install -y --no-install-recommends gcc g++
 
 # upgrade python build tools
 RUN --mount=type=cache,target=/root/.cache \

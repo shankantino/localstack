@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError
 from localstack_snapshot.snapshots.transformer import SortingTransformer
 from moto.wafv2.models import US_EAST_1_REGION
 
+from localstack.aws.api.s3 import StorageClass
 from localstack.testing.pytest import markers
 from localstack.utils.strings import long_uid, short_uid
 from tests.aws.services.s3.conftest import TEST_S3_IMAGE
@@ -811,7 +812,8 @@ class TestS3Multipart:
         self, aws_client, s3_bucket, snapshot
     ):
         """
-        Providing CopyIfModifiedSince with a datetime which is in the future will always pass (even though it evaluates to false). This is AWS defined behaviour.
+        Providing CopyIfModifiedSince with a datetime which is in the future will always pass (even though it
+         evaluates to false). This is AWS defined behaviour.
         """
         snapshot.add_transformer(
             [
@@ -942,7 +944,8 @@ class TestS3Multipart:
         self, aws_client, s3_bucket, snapshot
     ):
         """
-        Providing CopySourceIfUnmodifiedSince with a datetime where the object has been modified since this datetime should fail.
+        Providing CopySourceIfUnmodifiedSince with a datetime where the object has been modified since
+         this datetime should fail.
         """
         snapshot.add_transformer(
             [
@@ -988,7 +991,8 @@ class TestS3Multipart:
         self, aws_client, s3_bucket, snapshot
     ):
         """
-        If CopySourceIfMatch is provided with CopySourceIfUnmodifiedSince it should proceed even if the latter evaluates to false.
+        If CopySourceIfMatch is provided with CopySourceIfUnmodifiedSince it should proceed even if the latter
+        evaluates to false.
         See documentation: https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html
         """
         snapshot.add_transformer(
@@ -1103,7 +1107,8 @@ class TestS3Multipart:
         )
         upload_id = create_multipart_upload["UploadId"]
 
-        # Don't do this, but required for behaviour with CopySourceIfModifiedSince which will pass if a future time is provided.
+        # Don't do this, but required for behaviour with CopySourceIfModifiedSince which will pass
+        # if a future time is provided.
         sleep(1)
 
         with pytest.raises(ClientError) as error:
@@ -1456,7 +1461,7 @@ class TestS3BucketObjectTagging:
     ):
         snapshot.add_transformers_list(
             [
-                snapshot.transform.key_value("BucketName"),
+                snapshot.transform.key_value("BucketArn"),
                 snapshot.transform.key_value("Location"),
             ]
         )
@@ -1486,6 +1491,7 @@ class TestS3BucketObjectTagging:
             [
                 snapshot.transform.key_value("BucketName"),
                 snapshot.transform.key_value("Location"),
+                snapshot.transform.key_value("BucketArn"),
             ]
         )
 
@@ -1520,6 +1526,7 @@ class TestS3BucketObjectTagging:
             [
                 snapshot.transform.key_value("BucketName"),
                 snapshot.transform.key_value("Location"),
+                snapshot.transform.key_value("BucketArn"),
             ]
         )
         us_east_1_s3_client = aws_client_factory(
@@ -2185,13 +2192,13 @@ class TestS3ObjectLock:
 
     @markers.aws.validated
     def test_get_put_object_lock_configuration(self, s3_create_bucket, aws_client, snapshot):
-        s3_bucket = s3_create_bucket(ObjectLockEnabledForBucket=True)
+        bucket_name = s3_create_bucket(ObjectLockEnabledForBucket=True)
 
-        get_lock_config = aws_client.s3.get_object_lock_configuration(Bucket=s3_bucket)
+        get_lock_config = aws_client.s3.get_object_lock_configuration(Bucket=bucket_name)
         snapshot.match("get-lock-config-start", get_lock_config)
 
         put_lock_config = aws_client.s3.put_object_lock_configuration(
-            Bucket=s3_bucket,
+            Bucket=bucket_name,
             ObjectLockConfiguration={
                 "ObjectLockEnabled": "Enabled",
                 "Rule": {
@@ -2204,26 +2211,26 @@ class TestS3ObjectLock:
         )
         snapshot.match("put-lock-config", put_lock_config)
 
-        get_lock_config = aws_client.s3.get_object_lock_configuration(Bucket=s3_bucket)
+        get_lock_config = aws_client.s3.get_object_lock_configuration(Bucket=bucket_name)
         snapshot.match("get-lock-config", get_lock_config)
 
         put_lock_config_enabled = aws_client.s3.put_object_lock_configuration(
-            Bucket=s3_bucket,
+            Bucket=bucket_name,
             ObjectLockConfiguration={
                 "ObjectLockEnabled": "Enabled",
             },
         )
         snapshot.match("put-lock-config-enabled", put_lock_config_enabled)
 
-        get_lock_config = aws_client.s3.get_object_lock_configuration(Bucket=s3_bucket)
+        get_lock_config = aws_client.s3.get_object_lock_configuration(Bucket=bucket_name)
         snapshot.match("get-lock-config-only-enabled", get_lock_config)
 
     @markers.aws.validated
     def test_put_object_lock_configuration_exc(self, s3_create_bucket, aws_client, snapshot):
-        s3_bucket = s3_create_bucket(ObjectLockEnabledForBucket=True)
+        bucket_name = s3_create_bucket(ObjectLockEnabledForBucket=True)
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket,
+                Bucket=bucket_name,
                 ObjectLockConfiguration={
                     "Rule": {
                         "DefaultRetention": {
@@ -2237,20 +2244,20 @@ class TestS3ObjectLock:
 
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket, ObjectLockConfiguration={}
+                Bucket=bucket_name, ObjectLockConfiguration={}
             )
         snapshot.match("put-lock-config-empty", e.value.response)
 
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket,
+                Bucket=bucket_name,
                 ObjectLockConfiguration={"ObjectLockEnabled": "Enabled", "Rule": {}},
             )
         snapshot.match("put-lock-config-empty-rule", e.value.response)
 
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket,
+                Bucket=bucket_name,
                 ObjectLockConfiguration={
                     "ObjectLockEnabled": "Enabled",
                     "Rule": {"DefaultRetention": {}},
@@ -2260,7 +2267,7 @@ class TestS3ObjectLock:
 
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket,
+                Bucket=bucket_name,
                 ObjectLockConfiguration={
                     "ObjectLockEnabled": "Enabled",
                     "Rule": {
@@ -2274,7 +2281,7 @@ class TestS3ObjectLock:
 
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket,
+                Bucket=bucket_name,
                 ObjectLockConfiguration={
                     "ObjectLockEnabled": "Enabled",
                     "Rule": {
@@ -2289,7 +2296,7 @@ class TestS3ObjectLock:
 
         with pytest.raises(ClientError) as e:
             aws_client.s3.put_object_lock_configuration(
-                Bucket=s3_bucket,
+                Bucket=bucket_name,
                 ObjectLockConfiguration={
                     "ObjectLockEnabled": "Enabled",
                     "Rule": {
@@ -2383,8 +2390,8 @@ class TestS3BucketOwnershipControls:
         delete_idempotent = aws_client.s3.delete_bucket_ownership_controls(Bucket=default_s3_bucket)
         snapshot.match("delete-ownership-after-delete", delete_idempotent)
 
-        s3_bucket = s3_create_bucket(ObjectOwnership="BucketOwnerPreferred")
-        get_ownership_at_creation = aws_client.s3.get_bucket_ownership_controls(Bucket=s3_bucket)
+        bucket_name = s3_create_bucket(ObjectOwnership="BucketOwnerPreferred")
+        get_ownership_at_creation = aws_client.s3.get_bucket_ownership_controls(Bucket=bucket_name)
         snapshot.match("get-ownership-at-creation", get_ownership_at_creation)
 
     @markers.aws.validated
@@ -3037,6 +3044,294 @@ class TestS3ObjectWritePrecondition:
         )
         snapshot.match("complete-multipart-if-match-overwrite-multipart", complete_multipart_1)
 
+    @markers.aws.validated
+    def test_copy_object_if_none_match(self, s3_bucket, aws_client, snapshot):
+        """Test CopyObject with If-None-Match header (destination conditional)"""
+        src_key = "source-object"
+        dest_key = "dest-object"
+
+        # Create source object
+        aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # Copy should succeed when destination doesn't exist
+        copy_result = aws_client.s3.copy_object(
+            Bucket=s3_bucket,
+            CopySource=f"{s3_bucket}/{src_key}",
+            Key=dest_key,
+            IfNoneMatch="*",
+        )
+        snapshot.match("copy-obj", copy_result)
+
+        # Copy should fail when destination already exists
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfNoneMatch="*",
+            )
+        snapshot.match("copy-obj-if-none-match-fail", e.value.response)
+
+    @markers.aws.validated
+    def test_copy_object_if_match(self, s3_bucket, aws_client, snapshot):
+        """Test CopyObject with If-Match header (destination conditional)"""
+        src_key = "source-object"
+        dest_key = "dest-object"
+
+        # Create source object
+        aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # Create initial destination object
+        put_result = aws_client.s3.put_object(
+            Bucket=s3_bucket, Key=dest_key, Body="initial content"
+        )
+        dest_etag = put_result["ETag"]
+
+        # Copy should succeed when destination ETag matches
+        copy_result = aws_client.s3.copy_object(
+            Bucket=s3_bucket,
+            CopySource=f"{s3_bucket}/{src_key}",
+            Key=dest_key,
+            IfMatch=dest_etag,
+        )
+        snapshot.match("copy-obj-if-match", copy_result)
+
+        # Copy should fail when destination ETag doesn't match (wrong ETag)
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfMatch='"wrong-etag"',
+            )
+        snapshot.match("copy-obj-if-match-fail-wrong-etag", e.value.response)
+
+        # Copy should fail when destination doesn't exist
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key="non-existent-key",
+                IfMatch=dest_etag,
+            )
+        snapshot.match("copy-obj-if-match-fail-no-object", e.value.response)
+
+    @markers.aws.validated
+    @markers.snapshot.skip_snapshot_verify(
+        paths=[
+            # TODO: AWS started added ChecksumType to CopyObjectResult
+            "$..CopyObjectResult.ChecksumType",
+            # TODO: AWS stopped returning DisplayName (finally)
+            "$..Owner.DisplayName",
+        ]
+    )
+    def test_copy_object_if_none_match_versioned_bucket(self, s3_bucket, aws_client, snapshot):
+        """Test CopyObject with If-None-Match header in a versioned bucket.
+
+        For buckets with versioning enabled, S3 checks for the presence of a current object version.
+        If the current object version is a delete marker, the copy should succeed with If-None-Match.
+        """
+        aws_client.s3.put_bucket_versioning(
+            Bucket=s3_bucket, VersioningConfiguration={"Status": "Enabled"}
+        )
+
+        src_key = "source-object"
+        dest_key = "dest-object"
+
+        # Create source object
+        aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # Copy should succeed when destination doesn't exist
+        copy_result = aws_client.s3.copy_object(
+            Bucket=s3_bucket,
+            CopySource=f"{s3_bucket}/{src_key}",
+            Key=dest_key,
+            IfNoneMatch="*",
+        )
+        snapshot.match("copy-obj", copy_result)
+
+        # Copy should fail when destination already exists
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfNoneMatch="*",
+            )
+        snapshot.match("copy-obj-if-none-match-fail", e.value.response)
+
+        # Delete the destination object (creates a delete marker in versioned bucket)
+        del_obj = aws_client.s3.delete_object(Bucket=s3_bucket, Key=dest_key)
+        snapshot.match("del-obj", del_obj)
+
+        # Copy should succeed when current version is a delete marker
+        copy_after_del = aws_client.s3.copy_object(
+            Bucket=s3_bucket,
+            CopySource=f"{s3_bucket}/{src_key}",
+            Key=dest_key,
+            IfNoneMatch="*",
+        )
+        snapshot.match("copy-obj-after-del", copy_after_del)
+
+        list_object_versions = aws_client.s3.list_object_versions(Bucket=s3_bucket)
+        snapshot.match("list-object-versions", list_object_versions)
+
+    @markers.aws.validated
+    @markers.snapshot.skip_snapshot_verify(
+        paths=[
+            # TODO: AWS started added ChecksumType to CopyObjectResult
+            "$..CopyObjectResult.ChecksumType",
+            # TODO: AWS stopped returning DisplayName (finally)
+            "$..Owner.DisplayName",
+        ]
+    )
+    def test_copy_object_if_match_versioned_bucket(self, s3_bucket, aws_client, snapshot):
+        """Test CopyObject with If-Match header in a versioned bucket.
+
+        For versioned buckets, If-Match checks against the current object version's ETag.
+        If the current version is a delete marker, the copy should fail.
+        """
+        aws_client.s3.put_bucket_versioning(
+            Bucket=s3_bucket, VersioningConfiguration={"Status": "Enabled"}
+        )
+
+        src_key = "source-object"
+        dest_key = "dest-object"
+
+        # Create source object
+        aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # Create initial destination object
+        put_result = aws_client.s3.put_object(
+            Bucket=s3_bucket, Key=dest_key, Body="initial content"
+        )
+        snapshot.match("put-obj", put_result)
+        dest_etag_1 = put_result["ETag"]
+
+        # Copy should fail with wrong ETag
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfMatch='"wrong-etag"',
+            )
+        snapshot.match("copy-obj-if-match-wrong-etag", e.value.response)
+
+        # Delete the destination object (creates a delete marker)
+        del_obj = aws_client.s3.delete_object(Bucket=s3_bucket, Key=dest_key)
+        snapshot.match("del-obj", del_obj)
+
+        # Copy should fail when current version is a delete marker (even with correct old ETag)
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfMatch=dest_etag_1,
+            )
+        snapshot.match("copy-obj-after-del-exc", e.value.response)
+
+        # Create a new destination object
+        put_result_2 = aws_client.s3.put_object(
+            Bucket=s3_bucket, Key=dest_key, Body="new content after delete"
+        )
+        snapshot.match("put-obj-after-del", put_result_2)
+        dest_etag_2 = put_result_2["ETag"]
+
+        # Copy should succeed with correct current ETag
+        copy_result = aws_client.s3.copy_object(
+            Bucket=s3_bucket,
+            CopySource=f"{s3_bucket}/{src_key}",
+            Key=dest_key,
+            IfMatch=dest_etag_2,
+        )
+        snapshot.match("copy-obj-if-match", copy_result)
+
+        list_object_versions = aws_client.s3.list_object_versions(Bucket=s3_bucket)
+        snapshot.match("list-object-versions", list_object_versions)
+
+    @markers.aws.validated
+    def test_copy_object_precondition_write_validation(self, s3_bucket, aws_client, snapshot):
+        src_key = "source-object"
+        dest_key = "dest-object"
+
+        # Create source object
+        put_obj = aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # assert that IfNoneMatch only accept '*'
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfNoneMatch=put_obj["ETag"],
+            )
+        snapshot.match("copy-obj-none-match-etag", e.value.response)
+
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfMatch="*",
+            )
+        snapshot.match("copy-obj-if-match-star", e.value.response)
+
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=dest_key,
+                IfMatch="*",
+                IfNoneMatch=put_obj["ETag"],
+            )
+        snapshot.match("copy-obj-both", e.value.response)
+
+    @markers.aws.validated
+    def test_copy_object_if_none_match_in_place(self, s3_bucket, aws_client, snapshot):
+        """Test CopyObject with If-None-Match header (destination conditional)"""
+        src_key = "source-object"
+
+        # Create source object
+        aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # Copy should fail when destination already exists (in place)
+        with pytest.raises(ClientError) as e:
+            aws_client.s3.copy_object(
+                Bucket=s3_bucket,
+                CopySource=f"{s3_bucket}/{src_key}",
+                Key=src_key,
+                IfNoneMatch="*",
+                StorageClass=StorageClass.STANDARD,
+            )
+        snapshot.match("copy-obj-if-none-match-fail", e.value.response)
+
+    @markers.aws.validated
+    @markers.snapshot.skip_snapshot_verify(
+        paths=[
+            # TODO: AWS started added ChecksumType to CopyObjectResult
+            "$..CopyObjectResult.ChecksumType",
+        ]
+    )
+    def test_copy_object_if_match_in_place(self, s3_bucket, aws_client, snapshot):
+        """Test CopyObject with If-None-Match header (destination conditional)"""
+        src_key = "source-object"
+
+        # Create source object
+        put_obj = aws_client.s3.put_object(Bucket=s3_bucket, Key=src_key, Body="source content")
+
+        # Copy should fail when destination already exists (in place)
+        # with pytest.raises(ClientError) as e:
+        copy_obj = aws_client.s3.copy_object(
+            Bucket=s3_bucket,
+            CopySource=f"{s3_bucket}/{src_key}",
+            Key=src_key,
+            IfMatch=put_obj["ETag"],
+            StorageClass=StorageClass.STANDARD,
+        )
+        snapshot.match("copy-obj-if-match-in-place", copy_obj)
+
 
 class TestS3MetricsConfiguration:
     @markers.aws.validated
@@ -3199,6 +3494,9 @@ class TestS3MetricsConfiguration:
         snapshot.match("delete_bucket_metrics_configuration_2", delete_err.value.response)
 
 
+@pytest.mark.skip(
+    reason="Behavior is not in line anymore with AWS: implement IfMatch in DeleteObject"
+)
 class TestS3DeletePrecondition:
     @markers.aws.validated
     def test_delete_object_if_match_non_express(self, s3_bucket, aws_client, snapshot):

@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 
 from localstack.aws.api.cloudwatch import MetricAlarm, MetricDataQuery, MetricStat, StateValue
 from localstack.aws.connect import connect_to
+from localstack.runtime.shutdown import SHUTDOWN_HANDLERS
 from localstack.utils.aws import arns, aws_stack
-from localstack.utils.scheduler import Scheduler
+from localstack.utils.scheduler import ScheduledTask, Scheduler
 
 if TYPE_CHECKING:
     from mypy_boto3_cloudwatch import CloudWatchClient
@@ -38,16 +39,26 @@ class AlarmScheduler:
         """
         super().__init__()
         self.scheduler = Scheduler()
-        self.thread = threading.Thread(target=self.scheduler.run, name="cloudwatch-scheduler")
-        self.thread.start()
-        self.scheduled_alarms = {}
+        self.scheduled_alarms: dict[str, ScheduledTask] = {}
+        self.thread: threading.Thread | None = None
 
-    def shutdown_scheduler(self) -> None:
+    def start(self) -> None:
+        if not (self.thread and self.thread.is_alive()):
+            LOG.debug("Starting CloudWatch scheduler")
+            self.thread = threading.Thread(target=self.scheduler.run, name="cloudwatch-scheduler")
+            self.thread.start()
+            SHUTDOWN_HANDLERS.register(self.shutdown)
+
+    def shutdown(self) -> None:
         """
-        Shutsdown the scheduler, must be called before application stops
+        Shutdown the scheduler, must be called before application stops
         """
+        LOG.debug("Stopping CloudWatch scheduler")
         self.scheduler.close()
-        self.thread.join(10)
+        self.scheduled_alarms.clear()
+        SHUTDOWN_HANDLERS.unregister(self.shutdown)
+        if self.thread:
+            self.thread.join(10)
 
     def schedule_metric_alarm(self, alarm_arn: str) -> None:
         """(Re-)schedules the alarm, if the alarm is re-scheduled, the running alarm scheduler will be cancelled before
@@ -233,15 +244,16 @@ def collect_metric_data(alarm_details: MetricAlarm, client: "CloudWatchClient") 
     evaluation_periods = alarm_details["EvaluationPeriods"]
     period = alarm_details["Period"]
 
-    # From the docs: "Whenever an alarm evaluates whether to change state, CloudWatch attempts to retrieve a higher number of data
-    # points than the number specified as Evaluation Periods."
+    # From the docs: "Whenever an alarm evaluates whether to change state, CloudWatch attempts to retrieve a
+    # higher number of data points than the number specified as Evaluation Periods."
     # No other indication, try to calculate a reasonable value:
     magic_number = max(math.floor(evaluation_periods / 3), 2)
     collected_periods = evaluation_periods + magic_number
 
-    now = datetime.utcnow().replace(tzinfo=UTC)
+    now = datetime.now(tz=UTC)
     metric_query = generate_metric_query(alarm_details)
 
+    # Fetching the evaluation range:
     # get_metric_data needs to be run in a loop, so we also collect empty data points on the right position
     for i in range(0, collected_periods):
         start_time = now - timedelta(seconds=period)
@@ -393,6 +405,7 @@ def calculate_alarm_state(alarm_arn: str) -> None:
             alarm_name,
             alarm_state,
             StateValue.OK,
+            # TODO: cannot find a snapshot with StateValue.OK and the Threshold crossed value, verify this case
             THRESHOLD_CROSSED,
             state_reason_data=state_reason_data,
         )

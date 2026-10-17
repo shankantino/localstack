@@ -140,13 +140,13 @@ from localstack.services.stepfunctions.asl.static_analyser.usage_metrics_static_
 from localstack.services.stepfunctions.backend.activity import Activity, ActivityTask
 from localstack.services.stepfunctions.backend.alias import Alias
 from localstack.services.stepfunctions.backend.execution import Execution, SyncExecution
+from localstack.services.stepfunctions.backend.models import SFNStore, sfn_stores
 from localstack.services.stepfunctions.backend.state_machine import (
     StateMachineInstance,
     StateMachineRevision,
     StateMachineVersion,
     TestStateMachine,
 )
-from localstack.services.stepfunctions.backend.store import SFNStore, sfn_stores
 from localstack.services.stepfunctions.backend.test_state.execution import (
     TestStateExecution,
 )
@@ -1508,11 +1508,10 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
             raise ValidationException("State not found in definition")
 
         mock_input = request.get("mock")
-        TestStateStaticAnalyser.validate_mock(test_state_input=request)
+        state_configuration = request.get("stateConfiguration")
 
-        if state_configuration := request.get("stateConfiguration"):
-            # TODO: Add validations for this i.e assert len(input) <= failureCount
-            pass
+        TestStateStaticAnalyser.validate_state_configuration(state_configuration, mock_input)
+        TestStateStaticAnalyser.validate_mock(test_state_input=request)
 
         if state_context := request.get("context"):
             # TODO: Add validation ensuring only present if 'mock' is specified
@@ -1566,6 +1565,9 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
         if input_json := request.get("input", {}):
             input_json = json.loads(input_json)
 
+        if variables_json := request.get("variables"):
+            variables_json = json.loads(variables_json)
+
         execution = TestStateExecution(
             name=exec_name,
             role_arn=role_arn,
@@ -1578,6 +1580,7 @@ class StepFunctionsProvider(StepfunctionsApi, ServiceLifecycleHook):
             state_name=state_name,
             activity_store=self.get_store(context).activities,
             mock=state_mock,
+            variables=variables_json,
         )
         execution.start()
 
